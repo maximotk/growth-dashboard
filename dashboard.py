@@ -1061,7 +1061,7 @@ def main():
     """Main dashboard application"""
     
     # Header
-    st.title("🚗 Growth Business Intelligence Dashboard")
+    st.title("🚗 Growth Performance Dashboard")
     #st.markdown("*Growth Analytics & Performance Monitoring*")
     
     # Load data

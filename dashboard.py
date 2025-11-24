@@ -148,22 +148,32 @@ def display_scorecard(title, value, target, format_type="number", delta_inverse=
     # Calculate delta
     if target > 0:
         delta_pct = ((value - target) / target) * 100
-        if delta_inverse:  # For metrics where lower is better (like CAC)
-            delta_pct = -delta_pct
     else:
         delta_pct = 0
     
-    # Format delta
-    delta_color = "normal"
-    if delta_pct > 5:
-        delta_color = "normal"  # Green
-        delta_text = f"+{delta_pct:.1f}% vs target"
-    elif delta_pct < -5:
-        delta_color = "inverse"  # Red
-        delta_text = f"{delta_pct:.1f}% vs target"
+    # Determine color based on performance direction
+    # For most metrics: above target = green, below target = red
+    # For inverse metrics (like CAC): below target = green, above target = red
+    if abs(delta_pct) <= 5:
+        # Small difference - show as neutral
+        delta_color = "off"
+        delta_text = f"{delta_pct:+.1f}% vs target"
+    elif not delta_inverse:
+        # Normal metrics: higher is better
+        if delta_pct > 5:
+            delta_color = "normal"  # Green - above target
+            delta_text = f"+{delta_pct:.1f}% vs target"
+        else:  # delta_pct < -5
+            delta_color = "inverse"  # Red - below target  
+            delta_text = f"{delta_pct:.1f}% vs target"
     else:
-        delta_color = "off"  # Gray
-        delta_text = f"{delta_pct:.1f}% vs target"
+        # Inverse metrics: lower is better (like CAC)
+        if delta_pct > 5:
+            delta_color = "inverse"  # Red - above target (bad for CAC)
+            delta_text = f"+{delta_pct:.1f}% vs target"
+        else:  # delta_pct < -5
+            delta_color = "normal"  # Green - below target (good for CAC)
+            delta_text = f"{delta_pct:.1f}% vs target"
     
     st.metric(
         label=title,
@@ -562,7 +572,14 @@ def calculate_retention_metrics(filtered_retention_df, selected_business_units):
 def create_churn_trends_chart(filtered_retention_df, selected_business_units):
     """Create churn rates over time chart"""
     if filtered_retention_df.empty:
-        return go.Figure()
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No retention data available for selected filters",
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font=dict(size=14)
+        )
+        fig.update_layout(title='Churn Rates Over Time', height=400)
+        return fig
     
     # Prepare data for plotting
     plot_data = []
@@ -598,6 +615,16 @@ def create_churn_trends_chart(filtered_retention_df, selected_business_units):
             })
     
     plot_df = pd.DataFrame(plot_data)
+    
+    if plot_df.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No churn data available for selected filters",
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font=dict(size=14)
+        )
+        fig.update_layout(title='Churn Rates Over Time', height=400)
+        return fig
     
     fig = px.line(plot_df, x='date', y='churn_rate', color='churn_type',
                   title='Churn Rates Over Time',
@@ -727,8 +754,8 @@ def retention_tab(filtered_retention_df, filtered_cohort_df, filtered_b2b_df, se
     # Display scorecards
     st.subheader("Retention Performance")
     
-    # First row (3 columns)
-    col1, col2, col3 = st.columns(3)
+    # Use consistent 5-column layout for better spacing
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         st.metric("Customer Churn Rate", f"{metrics['customer_churn_rate']:.1%}")
@@ -743,9 +770,6 @@ def retention_tab(filtered_retention_df, filtered_cohort_df, filtered_b2b_df, se
     with col3:
         st.metric("Early Churn (0-3 months)", f"{metrics['early_churn_rate']:.1%}")
         st.caption("Subscriptions ending within 3 months")
-    
-    # Second row (2 columns)
-    col4, col5 = st.columns(2)
     
     with col4:
         st.metric("Renewal Rate", f"{metrics['renewal_rate']:.1%}")
@@ -763,6 +787,10 @@ def retention_tab(filtered_retention_df, filtered_cohort_df, filtered_b2b_df, se
     # Chart 1: Churn rates over time
     churn_fig = create_churn_trends_chart(filtered_retention_df, selected_business_units)
     st.plotly_chart(churn_fig, use_container_width=True)
+    
+    # Debug info for empty data (only show if data is empty)
+    if filtered_retention_df.empty:
+        st.info("ℹ️ **Tip:** Try expanding your date range or selecting 'All' business units to see retention trends.")
     
     # Chart 2: Cohort retention heatmap
     st.subheader("👥 Cohort Retention Analysis")

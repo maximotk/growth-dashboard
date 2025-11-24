@@ -379,7 +379,7 @@ def create_funnel_chart(filtered_funnel_df, business_unit):
     # Create horizontal bar chart (funnel-like)
     fig = go.Figure()
     
-    # Add bars
+    # Add bars with just volume numbers
     fig.add_trace(go.Bar(
         y=steps_df['step'],
         x=steps_df['value'],
@@ -393,12 +393,28 @@ def create_funnel_chart(filtered_funnel_df, business_unit):
         textfont=dict(color='white', size=12)
     ))
     
+    # Add small conversion rate annotations right after each bar
+    for i in range(1, len(steps_df)):
+        conversion_rate = steps_df.iloc[i]['conversion']
+        bar_end = steps_df.iloc[i]['value']  # End of this specific bar
+        y_pos = len(steps_df) - 1 - i  # Position at bar level
+        
+        fig.add_annotation(
+            x=bar_end + (steps_df['value'].max() * 0.02),  # Small offset from bar end
+            y=y_pos,
+            text=f"{conversion_rate:.1f}%",
+            showarrow=False,
+            font=dict(color="white", size=10, family="Arial"),
+            xanchor="left"
+        )
+    
     fig.update_layout(
         title=f"{bu_title} Acquisition Funnel",
         xaxis_title="Volume",
-        yaxis_title="Funnel Step",
+        yaxis_title="Funnel Step", 
         height=400,
-        yaxis={'categoryorder': 'array', 'categoryarray': steps_df['step'].tolist()[::-1]}
+        yaxis={'categoryorder': 'array', 'categoryarray': steps_df['step'].tolist()[::-1]},
+        showlegend=False
     )
     
     return fig
@@ -905,9 +921,9 @@ def acquisition_tab(filtered_subs_df, filtered_channel_df, filtered_funnel_df, f
     with col2:
         st.plotly_chart(cac_fig, use_container_width=True)
 
-def executive_summary_tab(filtered_df, targets):
-    """Display Executive Summary tab content"""
-    st.header("📊 Summary")
+def overview_tab(filtered_df, targets):
+    """Display Overview tab content"""
+    st.header("📊 Overview")
     
     # Calculate metrics
     metrics = calculate_metrics(filtered_df, targets)
@@ -1073,10 +1089,10 @@ def main():
     st.sidebar.write(f"📢 {len(selected_channels)} channels")
     
     # Create tabs
-    tab1, tab2, tab3 = st.tabs(["Executive Summary", "Acquisition", "Retention"])
+    tab1, tab2, tab3 = st.tabs(["Overview", "Acquisition", "Retention"])
     
     with tab1:
-        executive_summary_tab(filtered_subs_df, targets)
+        overview_tab(filtered_subs_df, targets)
     
     with tab2:
         acquisition_tab(filtered_subs_df, filtered_channel_df, filtered_funnel_df, filtered_customer_df, business_units)

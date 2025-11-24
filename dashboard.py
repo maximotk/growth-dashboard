@@ -152,27 +152,30 @@ def display_scorecard(title, value, target, format_type="number", delta_inverse=
         delta_pct = 0
     
     # Determine color based on performance direction
-    # For most metrics: above target = green, below target = red
-    # For inverse metrics (like CAC): below target = green, above target = red
+    # Streamlit delta_color: "normal" = green for positive, red for negative
+    #                       "inverse" = red for positive, green for negative
+    
     if abs(delta_pct) <= 5:
         # Small difference - show as neutral
         delta_color = "off"
         delta_text = f"{delta_pct:+.1f}% vs target"
     elif not delta_inverse:
-        # Normal metrics: higher is better
-        if delta_pct > 5:
-            delta_color = "normal"  # Green - above target
+        # Normal metrics: higher is better (Active Subs, MRR, NRR, etc.)
+        # We want: above target = green, below target = red
+        # Since delta_pct is positive when above target, use "normal"
+        delta_color = "normal"
+        if delta_pct > 0:
             delta_text = f"+{delta_pct:.1f}% vs target"
-        else:  # delta_pct < -5
-            delta_color = "inverse"  # Red - below target  
+        else:
             delta_text = f"{delta_pct:.1f}% vs target"
     else:
-        # Inverse metrics: lower is better (like CAC)
-        if delta_pct > 5:
-            delta_color = "inverse"  # Red - above target (bad for CAC)
+        # Inverse metrics: lower is better (CAC)
+        # We want: above target = red, below target = green  
+        # Since delta_pct is positive when above target, use "inverse"
+        delta_color = "inverse"
+        if delta_pct > 0:
             delta_text = f"+{delta_pct:.1f}% vs target"
-        else:  # delta_pct < -5
-            delta_color = "normal"  # Green - below target (good for CAC)
+        else:
             delta_text = f"{delta_pct:.1f}% vs target"
     
     st.metric(
@@ -420,9 +423,12 @@ def create_funnel_chart(filtered_funnel_df, business_unit):
     return fig
 
 def create_tofu_vs_subs_chart(filtered_funnel_df, filtered_subs_df, business_unit):
-    """Create top-of-funnel vs new subscriptions time series"""
+    """Create top-of-funnel vs new subscriptions time series with dual y-axis"""
     if filtered_funnel_df.empty or filtered_subs_df.empty:
         return go.Figure()
+    
+    # Create figure with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
     
     # Aggregate by date and business unit
     if business_unit == "All":
@@ -430,29 +436,38 @@ def create_tofu_vs_subs_chart(filtered_funnel_df, filtered_subs_df, business_uni
         b2c_funnel = filtered_funnel_df[filtered_funnel_df['business_unit'] == 'B2C'].groupby('date').agg({
             'visits': 'sum', 'contracts_signed': 'sum'
         }).reset_index()
-        b2c_funnel['business_unit'] = 'B2C'
-        b2c_funnel['tofu'] = b2c_funnel['visits']
         
         b2b_funnel = filtered_funnel_df[filtered_funnel_df['business_unit'] == 'B2B'].groupby('date').agg({
             'leads': 'sum', 'contracts_signed': 'sum'
         }).reset_index()
-        b2b_funnel['business_unit'] = 'B2B' 
-        b2b_funnel['tofu'] = b2b_funnel['leads']
         
-        # Combine data
-        combined_data = []
-        for _, row in b2c_funnel.iterrows():
-            combined_data.append({'date': row['date'], 'metric': 'B2C Visits', 'value': row['tofu']})
-            combined_data.append({'date': row['date'], 'metric': 'B2C New Subs', 'value': row['contracts_signed']})
+        # Add top-of-funnel traces (primary y-axis)
+        fig.add_trace(
+            go.Scatter(x=b2c_funnel['date'], y=b2c_funnel['visits'], 
+                      name='B2C Visits', line=dict(color='#1f77b4')),
+            secondary_y=False,
+        )
         
-        for _, row in b2b_funnel.iterrows():
-            combined_data.append({'date': row['date'], 'metric': 'B2B Leads', 'value': row['tofu']})
-            combined_data.append({'date': row['date'], 'metric': 'B2B New Subs', 'value': row['contracts_signed']})
+        fig.add_trace(
+            go.Scatter(x=b2b_funnel['date'], y=b2b_funnel['leads'], 
+                      name='B2B Leads', line=dict(color='#ff7f0e')),
+            secondary_y=False,
+        )
         
-        plot_df = pd.DataFrame(combined_data)
+        # Add new subscriptions traces (secondary y-axis)
+        fig.add_trace(
+            go.Scatter(x=b2c_funnel['date'], y=b2c_funnel['contracts_signed'], 
+                      name='B2C New Subs', line=dict(color='#2ca02c', dash='dash')),
+            secondary_y=True,
+        )
         
-        fig = px.line(plot_df, x='date', y='value', color='metric',
-                     title='Top-of-Funnel Volume vs New Subscriptions Over Time')
+        fig.add_trace(
+            go.Scatter(x=b2b_funnel['date'], y=b2b_funnel['contracts_signed'], 
+                      name='B2B New Subs', line=dict(color='#d62728', dash='dash')),
+            secondary_y=True,
+        )
+        
+        title = 'Top-of-Funnel Volume vs New Subscriptions Over Time'
         
     else:
         # Show single business unit
@@ -463,27 +478,53 @@ def create_tofu_vs_subs_chart(filtered_funnel_df, filtered_subs_df, business_uni
                 'visits': 'sum', 'contracts_signed': 'sum'
             }).reset_index()
             
-            # Create combined data for plotting
-            combined_data = []
-            for _, row in daily_data.iterrows():
-                combined_data.append({'date': row['date'], 'metric': 'Visits', 'value': row['visits']})
-                combined_data.append({'date': row['date'], 'metric': 'New Subscriptions', 'value': row['contracts_signed']})
+            # Add traces
+            fig.add_trace(
+                go.Scatter(x=daily_data['date'], y=daily_data['visits'], 
+                          name='Visits', line=dict(color='#1f77b4')),
+                secondary_y=False,
+            )
+            
+            fig.add_trace(
+                go.Scatter(x=daily_data['date'], y=daily_data['contracts_signed'], 
+                          name='New Subscriptions', line=dict(color='#2ca02c', dash='dash')),
+                secondary_y=True,
+            )
             
         else:  # B2B
             daily_data = bu_funnel.groupby('date').agg({
                 'leads': 'sum', 'contracts_signed': 'sum'
             }).reset_index()
             
-            combined_data = []
-            for _, row in daily_data.iterrows():
-                combined_data.append({'date': row['date'], 'metric': 'Leads', 'value': row['leads']})
-                combined_data.append({'date': row['date'], 'metric': 'New Subscriptions', 'value': row['contracts_signed']})
+            # Add traces
+            fig.add_trace(
+                go.Scatter(x=daily_data['date'], y=daily_data['leads'], 
+                          name='Leads', line=dict(color='#ff7f0e')),
+                secondary_y=False,
+            )
+            
+            fig.add_trace(
+                go.Scatter(x=daily_data['date'], y=daily_data['contracts_signed'], 
+                          name='New Subscriptions', line=dict(color='#d62728', dash='dash')),
+                secondary_y=True,
+            )
         
-        plot_df = pd.DataFrame(combined_data)
-        fig = px.line(plot_df, x='date', y='value', color='metric',
-                     title=f'{business_unit} Top-of-Funnel vs New Subscriptions Over Time')
+        title = f'{business_unit} Top-of-Funnel vs New Subscriptions Over Time'
     
-    fig.update_layout(height=400, xaxis_title="Date", yaxis_title="Volume")
+    # Set x-axis title
+    fig.update_xaxes(title_text="Date")
+    
+    # Set y-axes titles
+    fig.update_yaxes(title_text="Top-of-Funnel Volume", secondary_y=False)
+    fig.update_yaxes(title_text="New Subscriptions", secondary_y=True)
+    
+    # Update layout
+    fig.update_layout(
+        title=title,
+        height=400,
+        hovermode='x unified'
+    )
+    
     return fig
 
 def create_channel_performance_charts(filtered_channel_df):
@@ -1033,7 +1074,7 @@ def main():
     # Date range filter
     min_date = subs_df['date'].min().date()
     max_date = subs_df['date'].max().date()
-    default_start = max_date - timedelta(days=30)
+    default_start = max_date - timedelta(days=60)
     
     date_range = st.sidebar.date_input(
         "Date Range",
